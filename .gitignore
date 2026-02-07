@@ -222,3 +222,5 @@ tmp_segments/
 
 # local scripts not to include
 scripts/
+
+Dockerfile

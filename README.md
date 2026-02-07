@@ -16,7 +16,7 @@ an emphasis on correctness, testability, and performance.
 ## 🧭 Overview
 
 - **Python ≥ 3.11**
-- **Key dependencies:** `python-graphblas`, `numpy`, `scipy`
+- **Key dependencies:** `python-graphblas`, `numpy`, `scipy` (orderbook uses dense `numpy` arrays; GraphBLAS is used elsewhere in the toolbox)
 - Includes optional **C++/pybind11** extensions for hot paths (built with **scikit-build-core**).
 
 ---
@@ -33,37 +33,32 @@ pip install disco-toolbox
 
 ### `toolbox.orderbook`
 
-A compact order book for simulation loops:
+A compact order book for simulation loops (fast C++/pybind11 core):
 
-- Store outstanding orders as sparse `python-graphblas` vectors (orders are converted to sparse COO once on `append`)
+- Store outstanding orders as **dense** `numpy.ndarray` (float64) vectors
+- Keys are stored as opaque `bytes` (so you can pack identifiers however you like)
 - Allocate available capacity/stock against orders with a greedy strategy
 - Remove fully fulfilled orders during allocation
+- Supports pickling / unpickling for checkpointing
 
 #### Quick example
 
 ```python
-from graphblas import Vector, dtypes
+import numpy as np
 from toolbox.orderbook import Orderbook
 
-n = 10
 ob = Orderbook()
+ob.append(b"abc", np.array([1, 2, 3], dtype=np.double))
+ob.append(b"def", np.array([4, 5, 6], dtype=np.double))
 
-# Orders (metadata dicts are stored by reference)
-ob.append({"order_id": "A"}, Vector.from_coo([2, 7], [5.0, 3.0], size=n, dtype=dtypes.FP64))
-ob.append({"order_id": "B"}, Vector.from_coo([2, 8], [4.0, 6.0], size=n, dtype=dtypes.FP64))
+stock = np.array([5, 5, 5], dtype=np.double)
+allocations = ob.allocate_greedy(stock)
 
-values = Vector.from_coo([2, 7, 8], [6.0, 1.0, 10.0], size=n, dtype=dtypes.FP64)
-
-allocations = ob.allocate_greedy(values)
-
-# allocations: list[(key_dict, allocation_vector)]
 for key, alloc in allocations:
-    print(key["order_id"], alloc.to_coo())
+    print(key, alloc)
 
-# values is mutated in-place (remaining availability)
-print("remaining:", values.to_coo())
+print("remaining:", stock)
 ```
-
 
 
 ### `toolbox.distributions`
@@ -125,7 +120,7 @@ mypy src
 
 ## 🏗️ Building the extension locally
 
-The orderbook implementation includes a C++ extension module (`toolbox.orderbook._core`).
+The orderbook implementation includes a C++ extension module (`toolbox.orderbook._core`) built with pybind11.
 
 Typical local build (editable install):
 

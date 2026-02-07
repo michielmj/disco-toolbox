@@ -33,104 +33,72 @@ with deeper implementation details, performance notes, and integration patterns.
 
 ### 1.1 `toolbox.orderbook`
 
-#### 1.1.1 Purpose
+#### Purpose
 
-`toolbox.orderbook` provides a small, high-performance order book that can be used by *disco* simulation models to:
+`toolbox.orderbook` provides a fast, low-overhead “orderbook” data structure used by allocation / matching logic in simulation models. An orderbook is an ordered list of `(key, demand_vector)` entries, where:
 
-- register incoming orders (each order is a sparse demand vector),
-- allocate available capacity/stock against outstanding orders using a greedy strategy,
-- remove orders that are fully fulfilled.
+- `key` is an opaque identifier (Python `bytes`)
+- `demand_vector` is a **dense** 1‑D `numpy.ndarray` of `float64` with fixed length (`length`)
 
-The primary use-case is frequent, sparse allocation in tight simulation loops.
+The core performance goal is to support tight loops for greedy allocation while avoiding Python-level overhead.
 
-#### 1.1.2 Public API
+#### Public API (Python)
 
-The public API is intentionally small:
+- `Orderbook.append(key: bytes, arr: np.ndarray[np.float64]) -> None`  
+  Appends an entry. `arr` must be 1‑D, `dtype=float64`, and its length must match the orderbook `length` (the first appended vector defines `length`).
 
-- `Orderbook.append(key: dict, arr: graphblas.Vector) -> None`
-- `Orderbook.remove(index: int) -> None`
-- `Orderbook.get_at_index(index: int) -> tuple[dict, graphblas.Vector]`
-- `Orderbook.allocate_greedy(values: graphblas.Vector) -> list[tuple[dict, graphblas.Vector]]`
+- `Orderbook.remove(index: int) -> None`  
+  Removes entry at `index` (0‑based).
+
+- `Orderbook.get_at_index(index: int) -> tuple[bytes, np.ndarray[np.float64]]`  
+  Returns a **copy** of the stored vector.
+
+- `Orderbook.allocate_greedy(values: np.ndarray[np.float64]) -> list[tuple[bytes, np.ndarray[np.float64]]]`  
+  Greedily allocates from a mutable stock vector `values` against entries in order.
+  - Mutates `values` in-place by subtracting allocations.
+  - Mutates the orderbook by subtracting allocations from each entry and removing entries that become fully fulfilled (sum remaining ≤ 0).
+  - Returns a list of `(key, allocation_vector)` for entries that received a non‑zero allocation.
+
 - Properties:
-  - `Orderbook.size: int` number of orders in the book
-  - `Orderbook.length: int` vector length (dimension) for all orders; `0` when empty
+  - `Orderbook.size: int` – number of entries
+  - `Orderbook.length: int` – vector length (0 if empty)
 
-**Key semantics.** `key` is a Python `dict` that is stored *by reference*. This is convenient for attaching rich metadata to an order
-without copying. Mutating the dict after `append` will be observable through later `get_at_index` and `allocate_greedy` results.
+#### Core implementation (`_core`)
 
-**Vector semantics.** `arr` is a `python-graphblas` `Vector` representing the order quantities. The `Vector` passed to `append` is not
-mutated.
+The implementation is in a CPython extension module (`toolbox.orderbook._core`) written in C++ with **pybind11**, closely mirroring the original Cython design:
 
-**Length consistency.** The first appended order fixes `length`. All later `append` calls must use the same vector dimension.
-`allocate_greedy` must be called with a `values` vector of the same dimension.
+- Each entry stores:
+  - a heap-allocated C string copy of the Python `bytes` key (`char*`, NUL-terminated)
+  - a heap-allocated contiguous `double*` array of length `length`
+  - a `next` pointer (singly-linked list)
 
-#### 1.1.3 Implementation Overview
+This representation minimizes per-entry overhead and makes `allocate_greedy` a straightforward pointer-walk over contiguous arrays.
 
-`Orderbook` is implemented as a CPython extension module using **C++17 + pybind11**:
+**Important:** The C++ core does **not** depend on GraphBLAS and does not call into `python-graphblas`. All numerical storage is dense NumPy `float64`.
 
-- Python entry point: `toolbox.orderbook.Orderbook`
-- Extension module: `toolbox.orderbook._core` (built from `src/toolbox/orderbook/_core.cpp`)
+#### Pickling / state
 
-Internal storage uses a linked list of entries. Each entry contains:
+`Orderbook` supports pickling via `__getstate__` / `__setstate__`:
 
-- `key`: `py::dict` (reference-held)
-- `order`: sparse COO representation stored in C++:
-  - indices: `vector<uint64_t>`
-  - values: `vector<double>` (FP64)
+- `__getstate__` returns a Python list of `(key: bytes, data: np.ndarray[np.float64])`.
+- `__setstate__` clears the existing structure and replays `append` for each stored entry.
+- `length` is restored from the first entry’s array length; an empty state yields an empty orderbook.
 
-On `append`, the input `Vector` is converted once to COO via `Vector.to_coo()` and stored in C++.
-Non-positive values are dropped and indices are stored in sorted order.
+#### Invariants and error handling
 
-On `get_at_index`, a new `Vector` is reconstructed from the stored COO using `Vector.from_coo(...)` (FP64, fixed `size`).
+- All entries in an orderbook share the same fixed `length`.
+- `append` raises `TypeError` on length mismatch or invalid array shape/dtype.
+- `remove` and `get_at_index` raise `IndexError` on invalid indices.
+- `allocate_greedy` raises `TypeError` if `values` has the wrong length or dtype.
 
-#### 1.1.4 Greedy Allocation Algorithm
+#### Tests
 
-`allocate_greedy(values)` performs a single pass over the current order list.
+Unit tests cover:
 
-For each order, it allocates on the *intersection* of (order indices) and (values indices):
+- Append / size / length and retrieval
+- Greedy allocation semantics, including removal of fulfilled entries
+- Pickle roundtrip preserving keys and vector contents
 
-- For each order entry `(i, order_i)`:
-  - allocate `alloc_i = min(order_i, values_i)` when `values_i > 0`
-  - update `order_i -= alloc_i`
-  - update `values_i -= alloc_i`
-
-An allocation `Vector` is produced per order where at least one `alloc_i > 0`. The returned list preserves the original order book
-traversal order.
-
-Orders that become empty (no remaining positive entries) are removed from the book during the traversal.
-
-**Mutation of `values`.** For API parity with the earlier NumPy-based implementation, `values` is mutated in place. The implementation
-reconstructs an updated values vector from the internal sparse map and assigns it back to the original object using the canonical
-python-graphblas idiom `values << new_values`.
-
-#### 1.1.5 Serialization
-
-`Orderbook` supports pickling via `__getstate__` / `__setstate__`.
-
-The state is encoded as:
-
-- `length` (vector dimension)
-- list of entries as `(key_dict, idx_array_u64, val_array_f64)`
-
-On restore, entries are rehydrated directly into internal COO storage (without needing to reconstruct then re-extract a `Vector`).
-
-#### 1.1.6 Performance Notes
-
-- The design targets sparse workloads where `allocate_greedy` is called frequently.
-- Converting orders to COO once at `append` amortizes extraction costs.
-- The allocation hot-path is implemented as a tight C++ loop over sparse entries to avoid Python dispatch overhead.
-- Current implementation uses an `unordered_map` for `values` during allocation. If profiling shows this to be a bottleneck, consider
-  replacing it with a sorted-array merge approach for improved cache locality.
-
-#### 1.1.7 Future Extensions
-
-This section is intentionally left open for future additions, including but not limited to:
-
-- alternative allocation strategies (FIFO with priorities, proportional allocation, fair-share),
-- supporting different numeric dtypes (e.g., INT64) or per-order dtype,
-- more efficient storage containers (vector + tombstones, pooling),
-- batch APIs (append_many, allocate_many),
-- richer querying/iteration utilities (without exposing internal structure).
 
 ### 1.2 `toolbox.distributions`
 
