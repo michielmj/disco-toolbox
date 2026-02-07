@@ -354,29 +354,34 @@ public:
     }
 
     py::tuple __getstate__() const {
-        // Return (length, [(key, idx_array_u64, val_array_f64), ...])
         py::list entries;
 
         Entry* curr = head_.get();
         while (curr != nullptr) {
-            py::array_t<std::uint64_t> idx_arr(static_cast<py::ssize_t>(curr->idx.size()));
-            py::array_t<double> val_arr(static_cast<py::ssize_t>(curr->val.size()));
+            if (curr->idx.size() != curr->val.size()) {
+                PyErr_SetString(PyExc_RuntimeError, "Internal error: idx/val size mismatch in Orderbook entry.");
+                throw py::error_already_set();
+            }
 
-            {
-                auto idx_w = idx_arr.mutable_unchecked<1>();
-                auto val_w = val_arr.mutable_unchecked<1>();
-                for (py::ssize_t i = 0; i < idx_arr.shape(0); ++i) {
-                    idx_w(i) = curr->idx[static_cast<std::size_t>(i)];
-                    val_w(i) = curr->val[static_cast<std::size_t>(i)];
-                }
+            const std::size_t n = curr->idx.size();
+
+            py::array_t<std::uint64_t> idx_arr(static_cast<py::ssize_t>(n));
+            py::array_t<double> val_arr(static_cast<py::ssize_t>(n));
+
+            auto idx_w = idx_arr.mutable_unchecked<1>();
+            auto val_w = val_arr.mutable_unchecked<1>();
+
+            for (std::size_t i = 0; i < n; ++i) {
+                idx_w(static_cast<py::ssize_t>(i)) = curr->idx[i];
+                val_w(static_cast<py::ssize_t>(i)) = curr->val[i];
             }
 
             entries.append(py::make_tuple(curr->key, idx_arr, val_arr));
             curr = curr->next.get();
         }
 
-        const std::int64_t n = length_.value_or(0);
-        return py::make_tuple(n, entries);
+        const std::int64_t dim = length_.value_or(0);
+        return py::make_tuple(dim, entries);
     }
 
     void __setstate__(py::tuple state) {
