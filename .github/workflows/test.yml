@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with: { python-version: "3.11" }
       - run: |
           python -m pip install -U pip
-          pip install -e '.[dev,parquet]'
+          pip install -e '.[dev]'
           pytest -q
           mypy src/toolbox
 
