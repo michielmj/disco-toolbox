@@ -1,4 +1,4 @@
-name: release-publish
+name: Build & Publish (on Release)
 
 on:
   release:
@@ -6,72 +6,93 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
+  build-wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-13, macos-14]
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheels
+        env:
+          CIBW_BUILD: "cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "*-cp314-* *-musllinux_*"
+          CIBW_ARCHS_LINUX: "x86_64"            # 👈 disable aarch64 here
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
+          CIBW_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba" PIP_PREFER_BINARY="1"'
+          CIBW_TEST_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba" PIP_PREFER_BINARY="1"'
+        run: |
+          python -m pip install -U pip cibuildwheel build
+          # cibuildwheel reads settings from pyproject.toml ([tool.cibuildwheel])
+          python -m cibuildwheel --output-dir wheelhouse
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist
+        run: |
+          python -m pip install -U build
+          python -m build --sdist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-22.04
     permissions:
       id-token: write   # required for PyPI Trusted Publisher (OIDC)
       contents: read
 
     steps:
-      - name: 🧩 Checkout source at the release tag (with tags)
-        uses: actions/checkout@v4
+      - name: Download wheels
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ github.event.release.tag_name }}  # e.g., v0.1.0
-          fetch-depth: 0                             # full history
-          fetch-tags: true                           # ensure tags are present
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: Download sdist
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
+          name: sdist
+          path: dist
 
-      - name: 📦 Install build tools
-        run: |
-          python -m pip install -U pip setuptools wheel build twine setuptools-scm
-
-      - name: 🏗️ Build sdist + universal wheel
-        run: |
-          rm -rf dist build *.egg-info **/*.egg-info
-          python -m build --sdist --wheel
-          python -m twine check dist/*
-
-      - name: 🔎 Inspect wheel METADATA
-        run: |
-          python - <<'PY'
-          import zipfile, pathlib
-          whls = sorted(pathlib.Path("dist").glob("*.whl"))
-          assert whls, "No wheels found in dist/"
-          with zipfile.ZipFile(whls[-1]) as z:
-              meta = [n for n in z.namelist() if n.endswith('.dist-info/METADATA')]
-              assert meta, "No METADATA in wheel"
-              data = z.read(meta[0]).decode()
-              print("--- METADATA header ---")
-              for k in ("Metadata-Version", "Name:", "Version:"):
-                  print(next((line for line in data.splitlines() if line.startswith(k)), f"{k} MISSING"))
-              print("-----------------------")
-          PY
-
-      - name: 📋 List built artifacts
-        run: ls -lh dist
-
-      - name: 🧪 Determine publish target
-        id: target
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "manual=${{ github.event.inputs.publish_target }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "manual=none" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: 🚀 Publish to PyPI
-        if: github.event_name == 'release' || steps.target.outputs.manual == 'pypi'
+      - name: Upload to PyPI (Trusted Publisher)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
-
-      - name: 🚀 Publish to TestPyPI
-        if: steps.target.outputs.manual == 'testpypi'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
+          # repository-url: https://test.pypi.org/legacy/  # uncomment to publish to TestPyPI

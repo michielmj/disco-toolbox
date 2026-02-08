@@ -9,9 +9,10 @@ from scipy.stats import norm as _norm
 from scipy.stats import uniform as _uniform
 from scipy.stats._distn_infrastructure import rv_continuous
 
+from .conditional import conditional
+from .constant import constant
 from .fit_moments import FitMomentsFactory, FitSpec
 from .rectnorm import rectnorm
-from .conditional import conditional
 
 
 def _gamma_params(mean: float, std: float, _: Mapping[str, Any]) -> tuple[float, ...]:
@@ -65,12 +66,24 @@ def _rectnorm_freeze(params: tuple[float, ...]) -> rv_continuous:
     return rectnorm(mu, sigma)
 
 
+def _constant_params(mean: float, std: float, _: Mapping[str, Any]) -> tuple[float, ...]:
+    # Matches constant.params_from_mean_std behavior (strict: requires std == 0 within tolerance)
+    (c,) = constant.params_from_mean_std(mean, std)
+    return (c,)
+
+
+def _constant_freeze(params: tuple[float, ...]) -> rv_continuous:
+    (c,) = params
+    return constant(c)
+
+
 registry = {
     "gamma": FitSpec(_gamma_params, _gamma_freeze),
     "norm": FitSpec(_norm_params, _norm_freeze),
     "laplace": FitSpec(_laplace_params, _laplace_freeze),
     "uniform": FitSpec(_uniform_params, _uniform_freeze),
     "rectnorm": FitSpec(_rectnorm_params, _rectnorm_freeze),
+    "constant": FitSpec(_constant_params, _constant_freeze),
 }
 
 fit_moments = FitMomentsFactory(registry)
@@ -78,5 +91,6 @@ fit_moments = FitMomentsFactory(registry)
 __all__ = [
     "fit_moments",
     "rectnorm",
+    "constant",
     "conditional",
 ]
