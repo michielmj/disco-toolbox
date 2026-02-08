@@ -36,7 +36,7 @@ build = "cp311-* cp312-* cp313-*"
 skip = "*-win32 *-cp313t-* *-cp314t-* *-cp314-* *-musllinux_*"
 test-command = "pytest -q {project}/tests"
 test-extras = ["dev"]
-environment = { PIP_ONLY_BINARY = "numpy", PIP_PREFER_BINARY = "1" }
+environment = { PIP_ONLY_BINARY = "numpy,scipy", PIP_PREFER_BINARY = "1" }
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
