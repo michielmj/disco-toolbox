@@ -23,7 +23,7 @@ class constant_gen(rv_continuous):
         # Single shape parameter c (can be any finite real number).
         return len(args) == 1 and np.isfinite(np.asarray(args[0])).all()
 
-    def _rvs(self, *args: Any, size=None, random_state=None) -> np.ndarray:
+    def _rvs(self, *args: Any, size: int | tuple[int, ...] | None = None, random_state: Any = None) -> np.ndarray:
         c = float(args[0])
         if size is None:
             return np.asarray(c, dtype=np.float64)
