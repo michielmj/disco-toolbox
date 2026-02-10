@@ -8,54 +8,73 @@ from scipy.stats import rv_continuous
 
 class constant_gen(rv_continuous):
     """
-    Degenerate (Dirac) distribution with all mass at a single value `c`.
+    Degenerate (Dirac) distribution with all mass at value(s) `c`.
 
-    Parameters (shape):
-        c: float
+    Shape parameter:
+        c : float or array-like of floats
 
-    Usage:
-        rv0 = constant(0.0)
-        rv5 = constant(5.0)
-        x = rv5.rvs(size=10, random_state=rng)
+    Supports SciPy-style vector parameters, e.g.:
+        constant.mean([1,2,3]) -> array([1,2,3])
     """
 
     def _argcheck(self, *args: Any) -> bool:
-        # Single shape parameter c (can be any finite real number).
-        return len(args) == 1 and np.isfinite(np.asarray(args[0])).all()
+        # Single shape parameter c; accept scalars and arrays; require finite.
+        if len(args) != 1:
+            return False
+        c = np.asarray(args[0])
+        return bool(np.all(np.isfinite(c)))
 
-    def _rvs(self, *args: Any, size: int | tuple[int, ...] | None = None, random_state: Any = None) -> np.ndarray:
-        c = float(args[0])
+    def _rvs(self,
+             *args: Any,
+             size: int | tuple[int, ...] | None = None,
+             random_state: Any = None,
+        ) -> np.ndarray:
+        c = np.asarray(args[0], dtype=np.float64)
+
+        # SciPy convention: if size is None, return broadcasted parameter shape.
         if size is None:
-            return np.asarray(c, dtype=np.float64)
-        return np.full(size, c, dtype=np.float64)
+            # Return c with its natural (possibly broadcasted) shape
+            return np.array(c, copy=True, dtype=np.float64)
+
+        # If size is provided, it overrides. Broadcast c to requested size.
+        # If incompatible, numpy will raise ValueError, matching SciPy-style behavior.
+        return np.broadcast_to(c, size).astype(np.float64, copy=False)
 
     def _pdf(self, x: Any, *args: Any) -> np.ndarray:
-        c = float(args[0])
+        c = np.asarray(args[0], dtype=np.float64)
         xx = np.asarray(x, dtype=np.float64)
-        y = np.zeros_like(xx, dtype=np.float64)
-        y[xx == c] = 1.0
+
+        y = np.zeros(np.broadcast(xx, c).shape, dtype=np.float64)
+        # Broadcasted comparison
+        y[np.equal(xx, c)] = 1.0
         return y
 
     def _cdf(self, x: Any, *args: Any) -> np.ndarray:
-        c = float(args[0])
+        c = np.asarray(args[0], dtype=np.float64)
         xx = np.asarray(x, dtype=np.float64)
-        y = np.zeros_like(xx, dtype=np.float64)
-        y[xx >= c] = 1.0
+
+        y = np.zeros(np.broadcast(xx, c).shape, dtype=np.float64)
+        y[np.greater_equal(xx, c)] = 1.0
         return y
 
-    def _stats(self, *args: Any) -> tuple[float, float, float, float]:
-        c = float(args[0])
-        return c, 0.0, 0.0, 0.0
+    def _stats(self, *args: Any) -> tuple[np.ndarray | float, np.ndarray | float, np.ndarray | float, np.ndarray | float]:
+        c = np.asarray(args[0], dtype=np.float64)
+
+        if c.ndim == 0:
+            cc = float(c.item())
+            return cc, 0.0, 0.0, 0.0
+
+        z = np.zeros_like(c, dtype=np.float64)
+        return c, z, z, z
 
     @staticmethod
     def params_from_mean_std(mean: float, std: float) -> tuple[float]:
-        # For a constant distribution std should be 0 (within tolerance).
+        # For constant, std must be ~0 (strict), and c := mean.
         if not np.isfinite(mean) or not np.isfinite(std):
             raise ValueError("mean/std must be finite.")
         if std < 0:
             raise ValueError("std must be non-negative.")
         if std > 1e-12:
-            # Keep this strict to avoid silently producing nonsense fits.
             raise ValueError("constant distribution requires std == 0.")
         return (float(mean),)
 
