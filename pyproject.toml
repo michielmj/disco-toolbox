@@ -31,19 +31,6 @@ build-backend = "scikit_build_core.build"
 editable.mode = "redirect"
 wheel.packages = ["src/toolbox"]
 
-[tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-*"
-skip = "*-win32 *-cp313t-* *-cp314t-* *-cp314-* *-musllinux_*"
-test-command = "pytest -q {project}/tests"
-test-extras = ["dev"]
-environment = { PIP_ONLY_BINARY = "numpy,scipy", PIP_PREFER_BINARY = "1" }
-
-[tool.cibuildwheel.windows]
-archs = ["AMD64"]
-
-[tool.cibuildwheel.linux]
-archs = ["x86_64"]
-
 [tool.scikit-build.cmake.define]
 CMAKE_DOWNLOAD_TIMEOUT = 30
 PYBIND11_FINDPYTHON = true
@@ -57,9 +44,40 @@ version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
 fallback_version = "0.0.0"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["toolbox*"]
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-*"
+skip = "*-musllinux_*"
+test-command = "pytest -q {project}/tests"
+test-extras = ["dev"]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+
+[tool.cibuildwheel.linux.environment]
+CMAKE_GENERATOR = "Ninja"
+PIP_ONLY_BINARY = "numpy,pyarrow,llvmlite,numba,scipy""
+PIP_PREFER_BINARY = "1"
+
+[tool.cibuildwheel.macos]
+archs = ["arm64", "x86_64"]
+
+[tool.cibuildwheel.macos.environment]
+CMAKE_GENERATOR = "Ninja"
+PIP_ONLY_BINARY = "numpy,pyarrow,llvmlite,numba,scipy"
+PIP_PREFER_BINARY = "1"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+
+[tool.cibuildwheel.windows.environment]
+CMAKE_GENERATOR = "Visual Studio 17 2022"
+PIP_ONLY_BINARY = "numpy,pyarrow,llvmlite,numba,scipy"
+PIP_PREFER_BINARY = "1"
+
+
+#[tool.setuptools.packages.find]
+#where = ["src"]
+#include = ["toolbox*"]
 
 [project.optional-dependencies]
 dev = [

@@ -7,30 +7,32 @@ on:
 
 jobs:
   build-wheels:
+    name: Build wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
-        os: [ubuntu-22.04, macos-14]
       fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-latest]
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build tooling
-        run: python -m pip install -U pip cibuildwheel build
+      - name: Set up MSVC dev tools (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build wheels
-        env:
-          CIBW_BUILD: "cp311-* cp312-* cp313-*"
-          CIBW_SKIP: "*-cp314-* *-musllinux_*"
-          CIBW_ARCHS_LINUX: "x86_64"            # 👈 disable aarch64 here
-          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
-          CIBW_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba,scipy" PIP_PREFER_BINARY="1"'
-          CIBW_TEST_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba,scipy" PIP_PREFER_BINARY="1"'
-        run: python -m cibuildwheel --output-dir wheelhouse
+        run: |
+          python -m pip install -U pip cibuildwheel
+          python -m cibuildwheel --output-dir wheelhouse
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -39,19 +41,23 @@ jobs:
           path: wheelhouse/*.whl
 
   build-sdist:
+    name: Build sdist
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build tooling
-        run: python -m pip install -U pip build
-
       - name: Build sdist
-        run: python -m build --sdist
+        run: |
+          python -m pip install -U build
+          python -m build --sdist
 
       - name: Upload sdist
         uses: actions/upload-artifact@v4

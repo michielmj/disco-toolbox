@@ -2,7 +2,7 @@ name: Build & Publish (on Release)
 
 on:
   release:
-    types: [published]  # only when a GitHub Release is published
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14]
+        os: [ubuntu-22.04, macos-14, windows-latest]
 
     steps:
       - name: Check out release tag
@@ -25,17 +25,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up MSVC dev tools (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Build wheels
-        env:
-          CIBW_BUILD: "cp311-* cp312-* cp313-*"
-          CIBW_SKIP: "*-cp314-* *-musllinux_*"
-          CIBW_ARCHS_LINUX: "x86_64"            # 👈 disable aarch64 here
-          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
-          CIBW_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba,scipy" PIP_PREFER_BINARY="1"'
-          CIBW_TEST_ENVIRONMENT: 'PIP_ONLY_BINARY="numpy,pyarrow,llvmlite,numba,scipy" PIP_PREFER_BINARY="1"'
         run: |
-          python -m pip install -U pip cibuildwheel build
-          # cibuildwheel reads settings from pyproject.toml ([tool.cibuildwheel])
+          python -m pip install -U pip cibuildwheel
           python -m cibuildwheel --output-dir wheelhouse
 
       - name: Upload wheels
@@ -74,7 +70,7 @@ jobs:
     needs: [build-wheels, build-sdist]
     runs-on: ubuntu-22.04
     permissions:
-      id-token: write   # required for PyPI Trusted Publisher (OIDC)
+      id-token: write
       contents: read
 
     steps:
@@ -95,4 +91,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
-          # repository-url: https://test.pypi.org/legacy/  # uncomment to publish to TestPyPI
