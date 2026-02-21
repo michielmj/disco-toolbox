@@ -17,7 +17,7 @@ an emphasis on correctness, testability, and performance.
 
 - **Python ≥ 3.11**
 - **Key dependencies:** `python-graphblas`, `numpy`, `scipy` (orderbook uses dense `numpy` arrays; GraphBLAS is used elsewhere in the toolbox)
-- Includes optional **C++/pybind11** extensions for hot paths (built with **scikit-build-core**).
+- Includes optional **C++/pybind11** and **Cython** extensions for hot paths (built with **scikit-build-core**).
 
 ---
 
@@ -60,6 +60,74 @@ for key, alloc in allocations:
 print("remaining:", stock)
 ```
 
+---
+
+### `toolbox.calendar`
+
+Calendar-aware time arithmetic for simulation models (Cython-accelerated hot path):
+
+- Define working-time patterns via a **cyclic weight array** — full days, non-working days, or partial days
+- Add **non-repeating holiday overrides** by absolute day index
+- Compute `elapse(start, duration) -> finish`: the calendar time at which `duration` working units have elapsed since `start`
+- Accepts and returns both **scalars and NumPy arrays** (any broadcastable shape)
+- Compiled to a dense prefix-sum array at construction time; `elapse` is a single binary search — O(log H) per element
+
+#### Quick example
+
+```python
+import numpy as np
+from toolbox.calendar import Calendar
+
+# Mon–Fri = 1 working day, Sat–Sun = 0
+cal = Calendar([1, 1, 1, 1, 1, 0, 0])
+
+# Add public holidays
+cal.add_holiday(0)        # Monday 0 is a bank holiday
+cal.add_holiday(1, 0.5)   # Tuesday 1 is a half-day
+
+# Scalar
+finish = cal.elapse(start=0.0, duration=5.0)
+print(finish)   # 9.0  (loses Mon, half Tue)
+
+# NumPy arrays
+starts    = np.array([0.0, 7.0, 14.0])
+durations = np.array([5.0, 3.0,  1.0])
+print(cal.elapse(starts, durations))
+```
+
+---
+
+### `toolbox.capacity`
+
+Fixed-capacity token pool for scheduling jobs across parallel resources:
+
+- Models a **multi-server queue** where each token represents a parallel resource (server, machine, worker)
+- Jobs are assigned **greedily** to the earliest-free token — no sequencing decisions are made
+- Accepts a single duration (scalar) or an **ordered vector** of durations; vector jobs are assigned in occurrence order
+- Optional `Calendar` integration: finish times are computed in **working time** rather than wall-clock time
+
+#### Quick example
+
+```python
+import numpy as np
+from toolbox.capacity import Capacity
+from toolbox.calendar import Calendar
+
+# Two parallel resources on a Mon–Fri calendar
+cal = Calendar([1, 1, 1, 1, 1, 0, 0])
+cap = Capacity(2, calendar=cal)
+
+# Single job
+start, finish = cap.process(epoch=0.0, duration=3.0)
+print(start, finish)   # 0.0  3.0
+
+# Batch of jobs assigned in order
+starts, finishes = cap.process(epoch=0.0, duration=np.array([5.0, 5.0, 2.0, 2.0]))
+print(starts)    # [0. 0. 5. 5.]   both tokens occupied for first two jobs
+print(finishes)  # [5. 5. 8. 8.]   next two wait for weekend, finish Monday
+```
+
+---
 
 ### `toolbox.distributions`
 
@@ -118,9 +186,14 @@ mypy src
 
 ---
 
-## 🏗️ Building the extension locally
+## 🏗️ Building extensions locally
 
-The orderbook implementation includes a C++ extension module (`toolbox.orderbook._core`) built with pybind11.
+The toolbox includes two compiled extension modules:
+
+- `toolbox.orderbook._core` — C++ / pybind11
+- `toolbox.calendar._core` — Cython (with optional OpenMP parallelism)
+
+Both are built automatically on install via **scikit-build-core**.
 
 Typical local build (editable install):
 
@@ -128,7 +201,13 @@ Typical local build (editable install):
 pip install -e ".[dev]"
 ```
 
-If you are modifying C++ sources and want a clean rebuild, remove the build directory and reinstall:
+To enable native CPU optimisations for the Cython extension (local development only):
+
+```bash
+DISCO_NATIVE_MARCH=1 pip install -e ".[dev]"
+```
+
+If you are modifying C++ or Cython sources and want a clean rebuild:
 
 ```bash
 rm -rf build
