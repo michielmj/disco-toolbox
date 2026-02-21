@@ -1,36 +1,46 @@
 cmake_minimum_required(VERSION 3.18)
-project(disco_toolbox LANGUAGES CXX)
+project(disco_toolbox LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Python (needed for extension module build)
+# ── Shared toolchain setup ────────────────────────────────────────────────────
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 
-# Prefer an installed pybind11 (e.g. provided via build-system requires), but allow fallback.
+execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c "import numpy; print(numpy.get_include())"
+    OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _numpy_missing
+)
+if(_numpy_missing)
+    message(FATAL_ERROR "NumPy not found — add numpy to build-system.requires")
+endif()
+message(STATUS "NumPy include dir: ${NUMPY_INCLUDE_DIR}")
+
 find_package(pybind11 CONFIG QUIET)
 if(NOT pybind11_FOUND)
-  include(FetchContent)
-  FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v2.12.0
-  )
-  FetchContent_MakeAvailable(pybind11)
+    include(FetchContent)
+    FetchContent_Declare(pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11.git
+        GIT_TAG v2.12.0
+    )
+    FetchContent_MakeAvailable(pybind11)
 endif()
 
-# Build toolbox.orderbook._core
-pybind11_add_module(_core MODULE
-  src/toolbox/orderbook/_core.cpp
-)
+find_program(CYTHON_EXECUTABLE NAMES cython cython3 REQUIRED)
 
-target_compile_features(_core PRIVATE cxx_std_17)
-
-# Optional: make builds quieter on macOS
-if(APPLE)
-  target_compile_options(_core PRIVATE -Wno-deprecated-declarations)
+find_package(OpenMP COMPONENTS C)
+if(OpenMP_C_FOUND)
+    message(STATUS "OpenMP found — Cython prange targets will be parallel")
+else()
+    message(WARNING "OpenMP not found — Cython targets will be single-threaded")
 endif()
 
-# This is what scikit-build-core uses to place the extension in the wheel.
-# The DESTINATION path is relative to the wheel's platlib root.
-install(TARGETS _core DESTINATION toolbox/orderbook)
+# ── Shared macros ─────────────────────────────────────────────────────────────
+include(cmake/extension_helpers.cmake)
+
+# ── Subpackages ───────────────────────────────────────────────────────────────
+add_subdirectory(src/toolbox/orderbook)
+add_subdirectory(src/toolbox/calendar)
+# add_subdirectory(src/toolbox/future_package)   ← one line to add a new one
