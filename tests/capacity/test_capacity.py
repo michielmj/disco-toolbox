@@ -24,23 +24,27 @@ def cap1():
     """Single token."""
     return Capacity(1)
 
+
 @pytest.fixture
 def cap2():
     """Two tokens."""
     return Capacity(2)
+
 
 @pytest.fixture
 def cap4():
     """Four tokens."""
     return Capacity(4)
 
+
 @pytest.fixture
 def work_week():
     return Calendar([1, 1, 1, 1, 1, 0, 0])
 
+
 @pytest.fixture
 def cap2_cal(work_week):
-    return Capacity(2, calendar=work_week)
+    return Capacity(2, calc_finish=work_week.elapse)
 
 
 # ── Construction ──────────────────────────────────────────────────────────────
@@ -57,22 +61,6 @@ class TestConstruction:
 
     def test_capacity_property(self):
         assert Capacity(4).capacity == 4
-
-    def test_no_calendar_by_default(self):
-        assert Capacity(2).calendar is None
-
-    def test_calendar_stored(self, work_week):
-        cap = Capacity(2, calendar=work_week)
-        assert cap.calendar is work_week
-
-    def test_repr_no_calendar(self, cap2):
-        r = repr(cap2)
-        assert "Capacity(capacity=2" in r
-        assert "calendar=False" in r
-
-    def test_repr_with_calendar(self, cap2_cal):
-        assert "calendar=True" in repr(cap2_cal)
-
 
 # ── Scalar process, no calendar ───────────────────────────────────────────────
 
@@ -115,8 +103,8 @@ class TestScalarNoCalendar:
         assert f == 6.0
 
     def test_greedy_picks_earliest_token(self, cap2):
-        cap2.process(0.0, 1.0)   # token A free at 1
-        cap2.process(0.0, 5.0)   # token B free at 5
+        cap2.process(0.0, 1.0)  # token A free at 1
+        cap2.process(0.0, 5.0)  # token B free at 5
         # Next job should get token A (free at 1)
         s, f = cap2.process(0.0, 2.0)
         assert s == 1.0
@@ -149,12 +137,12 @@ class TestVectorNoCalendar:
     def test_basic_vector(self, cap2):
         starts, finishes = cap2.process(0.0, np.array([3.0, 3.0, 2.0, 2.0]))
         # Jobs 0,1 fill both tokens (finish=3); jobs 2,3 get them at 3
-        np.testing.assert_array_equal(starts,  [0, 0, 3, 3])
+        np.testing.assert_array_equal(starts, [0, 0, 3, 3])
         np.testing.assert_array_equal(finishes, [3, 3, 5, 5])
 
     def test_vector_single_element(self, cap1):
         starts, finishes = cap1.process(0.0, np.array([4.0]))
-        assert starts[0]  == 0.0
+        assert starts[0] == 0.0
         assert finishes[0] == 4.0
 
     def test_vector_returns_arrays(self, cap2):
@@ -222,7 +210,7 @@ class TestCalendarIntegration:
     def test_two_tokens_with_calendar(self, cap2_cal):
         starts, finishes = cap2_cal.process(0.0, np.array([3.0, 3.0]))
         # Both start Monday 0, both finish Thursday 3 (3 working days)
-        np.testing.assert_allclose(starts,   [0.0, 0.0])
+        np.testing.assert_allclose(starts, [0.0, 0.0])
         np.testing.assert_allclose(finishes, [3.0, 3.0])
 
     def test_calendar_affects_token_availability(self, cap2_cal):
@@ -235,8 +223,8 @@ class TestCalendarIntegration:
         assert f == pytest.approx(8.0)
 
     def test_calendar_with_holiday(self, work_week):
-        work_week.add_holiday(0)     # Monday 0 off
-        cap = Capacity(1, calendar=work_week)
+        work_week.add_holiday(0)  # Monday 0 off
+        cap = Capacity(1, calc_finish=work_week.elapse)
         # duration 1 starting epoch 0 → Mon is off, starts Tue, finishes Wed
         s, f = cap.process(0.0, 1.0)
         assert s == pytest.approx(0.0)
@@ -244,17 +232,17 @@ class TestCalendarIntegration:
 
     def test_no_calendar_vs_calendar_differ_across_weekend(self, work_week):
         cap_plain = Capacity(1)
-        cap_cal   = Capacity(1, calendar=work_week)
+        cap_cal = Capacity(1, calc_finish=work_week.elapse)
         # Start Friday noon, 1 day duration
         _, f_plain = cap_plain.process(4.5, 1.0)
-        _, f_cal   = cap_cal.process(4.5, 1.0)
-        assert f_plain == pytest.approx(5.5)   # Saturday noon
-        assert f_cal   == pytest.approx(7.5)   # Monday noon
+        _, f_cal = cap_cal.process(4.5, 1.0)
+        assert f_plain == pytest.approx(5.5)  # Saturday noon
+        assert f_cal == pytest.approx(7.5)  # Monday noon
 
     def test_vector_with_calendar_consistency(self, work_week):
         """Vector and scalar paths agree when a calendar is present."""
-        cap_v = Capacity(3, calendar=work_week)
-        cap_s = Capacity(3, calendar=work_week)
+        cap_v = Capacity(3, calc_finish=work_week.elapse)
+        cap_s = Capacity(3, calc_finish=work_week.elapse)
         durations = np.array([2.0, 5.0, 1.0, 3.0, 4.0, 2.0])
         epoch = 0.0
 

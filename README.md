@@ -104,7 +104,7 @@ Fixed-capacity token pool for scheduling jobs across parallel resources:
 - Models a **multi-server queue** where each token represents a parallel resource (server, machine, worker)
 - Jobs are assigned **greedily** to the earliest-free token — no sequencing decisions are made
 - Accepts a single duration (scalar) or an **ordered vector** of durations; vector jobs are assigned in occurrence order
-- Optional `Calendar` integration: finish times are computed in **working time** rather than wall-clock time
+- Optional `calc_finish` integration: finish times are computed rather than wall-clock time
 
 #### Quick example
 
@@ -115,7 +115,7 @@ from toolbox.calendar import Calendar
 
 # Two parallel resources on a Mon–Fri calendar
 cal = Calendar([1, 1, 1, 1, 1, 0, 0])
-cap = Capacity(2, calendar=cal)
+cap = Capacity(2, calc_finish=cal.elapse)
 
 # Single job
 start, finish = cap.process(epoch=0.0, duration=3.0)
