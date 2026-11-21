@@ -15,8 +15,8 @@ an emphasis on correctness, testability, and performance.
 
 ## 🧭 Overview
 
-- **Python ≥ 3.11**
-- **Key dependencies:** `python-graphblas`, `numpy`, `scipy` (orderbook uses dense `numpy` arrays; GraphBLAS is used elsewhere in the toolbox)
+- **Python ≥ 3.13**
+- **Key dependencies:** `python-graphblas` (≥ 2026.11), `numpy` (≥ 2.5), `pandas` (≥ 3.0), `scipy` (orderbook uses dense `numpy` arrays; GraphBLAS is used elsewhere in the toolbox)
 - Includes optional **C++/pybind11** and **Cython** extensions for hot paths (built with **scikit-build-core**).
 
 ---

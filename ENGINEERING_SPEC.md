@@ -9,7 +9,7 @@ Reusable Python utilities for *disco* simulation models.
 **Owner:** Michiel Jansen  
 **Repository:** https://github.com/michielmj/disco-toolbox  
 **License:** Apache-2.0  
-**Programming Language:** Python ≥ 3.11  
+**Programming Language:** Python ≥ 3.13  
 **Core Dependency Stack:** `numpy`, `python-graphblas`
 
 ---

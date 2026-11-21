@@ -3,29 +3,30 @@ name = "disco-toolbox"
 dynamic = ["version"]
 description = "A toolbox for disco simulation models."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Michiel Jansen" }]
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "numpy>=1.23",
-  "python-graphblas~=2025.2",
-  "scipy~=1.16",
+  "numpy>=2.5,<3",
+  "pandas>=3.0,<4",
+  "python-graphblas>=2026.11",
+  "scipy>=1.18",
 ]
 
 [build-system]
 requires = [
   "scikit-build-core>=0.10",
   "setuptools-scm>=8",
-  "pybind11>=2.11",
-  "cython>=3.0",
-  "numpy>=1.23",
+  "pybind11>=3.0",
+  "cython>=3.1",
+  "numpy>=2.5",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -47,7 +48,8 @@ local_scheme = "no-local-version"
 fallback_version = "0.0.0"
 
 [tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-*"
+build = "cp313-* cp314-* cp315-*"
+enable = ["cpython-prerelease"]
 skip = "*-musllinux_*"
 test-command = "pytest -q {project}/tests"
 test-extras = ["dev"]
@@ -96,7 +98,7 @@ addopts = "-q"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 warn_unused_configs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
